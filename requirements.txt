@@ -1,0 +1,16 @@
+# Core RL libraries
+gym==0.21.0
+stable-baselines3==2.0.0
+numpy>=1.21.0
+
+# Crafter environment
+git+https://github.com/danijar/crafter.git
+
+# Visualization and logging
+matplotlib>=3.5.0
+
+# Deep learning backend (CPU or GPU)
+torch>=1.13.0
+
+# Optional but recommended
+tensorboard>=2.10.0
