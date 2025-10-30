@@ -10,6 +10,7 @@ import sys
 import json
 import time
 import argparse
+import torch
 
 from stable_baselines3 import DQN
 from stable_baselines3.common.vec_env import DummyVecEnv, VecTransposeImage, VecFrameStack
@@ -53,6 +54,12 @@ def parse_args():
 def main():
     """Main training function."""
     args = parse_args()
+    
+    # Detect device (GPU if available, otherwise CPU)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+    if device == "cuda":
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
     
     # Build configuration from defaults and command line args
     config = DEFAULT_CONFIG.copy()
@@ -110,10 +117,16 @@ def main():
     # Create callback
     metrics_callback = CrafterMetricsCallback(verbose=1)
     
+    # Policy network configuration - larger network for complex environment
+    policy_kwargs = dict(
+        net_arch=[512, 512],  # Larger hidden layers for complex state space
+        normalize_images=True,  # Normalize pixel inputs to [0, 1]
+    )
+    
     # Initialize or load DQN agent
     if args.load_model:
         print(f"\nLoading model from: {args.load_model}")
-        model = DQN.load(args.load_model, env=vec_env)
+        model = DQN.load(args.load_model, env=vec_env, device=device)
         print("Model loaded successfully!")
     else:
         print("\nInitializing DQN agent...")
@@ -131,8 +144,10 @@ def main():
             exploration_initial_eps=config["exploration_initial_eps"],
             exploration_final_eps=config["exploration_final_eps"],
             exploration_fraction=config["exploration_fraction"],
+            policy_kwargs=policy_kwargs,
             verbose=1,
             seed=config["seed"],
+            device=device,
         )
     
     # Train the agent

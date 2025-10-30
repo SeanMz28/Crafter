@@ -63,10 +63,11 @@ class CrafterMetricsCallback(BaseCallback):
         n_episodes = len(self.achievements_per_episode)
         unlock_rates = {key: count / n_episodes for key, count in unlock_counts.items()}
         
-        # Calculate geometric mean
-        eps = 1e-12
+        # Geometric mean with 1% offset (official Crafter scoring)
+        # Convert rates (0-1) to percentages (0-100) for scoring
         if unlock_rates:
-            geo_mean = math.exp(sum(math.log(rate + eps) for rate in unlock_rates.values()) / len(unlock_rates))
+            percentages = [rate * 100 for rate in unlock_rates.values()]
+            geo_mean = math.exp(sum(math.log(1 + p) for p in percentages) / len(percentages)) - 1
         else:
             geo_mean = 0.0
         

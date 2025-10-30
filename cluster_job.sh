@@ -1,53 +1,34 @@
 #!/bin/bash
-#SBATCH --job-name=dqn_crafter
-#SBATCH --output=logs/dqn_crafter_%j.out
-#SBATCH --error=logs/dqn_crafter_%j.err
-#SBATCH --time=24:00:00
-#SBATCH --mem=16G
-#SBATCH --cpus-per-task=4
-# Uncomment if you have GPU access:
-# #SBATCH --gres=gpu:1
-# #SBATCH --partition=gpu
+set -euo pipefail
 
-echo "=========================================="
-echo "Job started at: $(date)"
-echo "Job ID: $SLURM_JOB_ID"
-echo "Node: $SLURM_NODELIST"
-echo "=========================================="
+cd "$HOME/rl/CrafterPlus/Crafter"
+mkdir -p logs runs
 
-# Load required modules (adjust based on your cluster)
-# module load python/3.10
-# module load cuda/11.8  # If using GPU
+# Conda + env
+source ~/.bashrc
+conda activate crafter-rl-gpu
 
-# Activate virtual environment
-source venv/bin/activate
+# Keep runtime clean & headless
+export PYTHONNOUSERSITE=1
+export MPLBACKEND=Agg
 
-# Create logs directory if it doesn't exist
-mkdir -p logs
+# Prefer conda libs; avoid system CUDA
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+unset CUDA_HOME
 
-# Set number of threads for better CPU performance
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
+# If you used pip cu121 wheels for torch, add:
+SITE_PKGS="$(python -c 'import site; print(site.getsitepackages()[0])')"
+export LD_LIBRARY_PATH="$SITE_PKGS/torch/lib:$SITE_PKGS/nvidia/nvjitlink/lib:$LD_LIBRARY_PATH"
 
-# Print Python and package info
-echo "Python version:"
-python --version
-echo ""
-echo "Installed packages:"
-pip list | grep -E "(gym|stable-baselines3|torch|crafter)"
-echo ""
+# Sanity info
+nvidia-smi || true
+python - <<'PY'
+import torch
+print("CUDA available:", torch.cuda.is_available())
+if torch.cuda.is_available(): print("GPU:", torch.cuda.get_device_name(0))
+print("Torch:", torch.__version__, "CUDA:", torch.version.cuda)
+PY
 
-# Run training
-echo "Starting training..."
-echo "=========================================="
-
-python train.py \
-    --timesteps 500000 \
-    --seed 0 \
-    --outdir ./results/seed_0 \
-    --eval-episodes 50
-
-echo ""
-echo "=========================================="
-echo "Job finished at: $(date)"
-echo "=========================================="
+# Train
+python3 train.py --timesteps 1000000 --outdir ./runs/trial11
+echo "== DONE =="

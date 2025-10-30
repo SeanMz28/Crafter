@@ -88,8 +88,10 @@ def evaluate_agent(model_path: str, config: Dict, n_eval_episodes: int = 10):
         
         unlock_rates = {key: count / n_eval_episodes for key, count in unlock_counts.items()}
         
-        eps = 1e-12
-        geo_mean = math.exp(sum(math.log(rate + eps) for rate in unlock_rates.values()) / len(unlock_rates))
+        # Geometric mean with 1% offset (official Crafter scoring)
+        # Convert rates (0-1) to percentages (0-100) for scoring
+        percentages = [rate * 100 for rate in unlock_rates.values()]
+        geo_mean = math.exp(sum(math.log(1 + p) for p in percentages) / len(percentages)) - 1
         
         results['achievement_unlock_rates'] = unlock_rates
         results['geometric_mean'] = geo_mean
@@ -218,18 +220,35 @@ def analyze_training_results(callback: CrafterMetricsCallback, outdir: str):
         print("\n⚠️  No achievement data collected during training.")
         print("   This may indicate the agent didn't complete enough episodes.")
     
-    # Plot training curves
+    # Plot training curves with shaded std dev regions
     if callback.episode_rewards:
         fig, axes = plt.subplots(2, 1, figsize=(12, 8))
         
+        # Calculate rolling statistics for shaded regions
+        window = min(50, len(callback.episode_rewards) // 10) if len(callback.episode_rewards) > 10 else 1
+        
         # Episode rewards
-        axes[0].plot(callback.episode_rewards, alpha=0.3, label='Raw')
-        if len(callback.episode_rewards) > 10:
-            window = min(50, len(callback.episode_rewards) // 10)
-            smoothed = np.convolve(callback.episode_rewards, 
-                                   np.ones(window)/window, mode='valid')
-            axes[0].plot(range(window-1, len(callback.episode_rewards)), 
-                        smoothed, label=f'Smoothed ({window} ep)', linewidth=2)
+        axes[0].plot(callback.episode_rewards, alpha=0.3, label='Raw', color='C0')
+        if len(callback.episode_rewards) > window:
+            # Calculate rolling mean and std
+            rolling_mean = []
+            rolling_std = []
+            for i in range(len(callback.episode_rewards)):
+                start = max(0, i - window + 1)
+                window_data = callback.episode_rewards[start:i+1]
+                rolling_mean.append(np.mean(window_data))
+                rolling_std.append(np.std(window_data))
+            
+            rolling_mean = np.array(rolling_mean)
+            rolling_std = np.array(rolling_std)
+            x = np.arange(len(rolling_mean))
+            
+            # Plot mean line
+            axes[0].plot(x, rolling_mean, label=f'Mean ({window} ep window)', linewidth=2, color='C0')
+            # Plot shaded ±1 std dev region
+            axes[0].fill_between(x, rolling_mean - rolling_std, rolling_mean + rolling_std, 
+                                 alpha=0.3, color='C0', label='±1 Std Dev')
+        
         axes[0].set_xlabel('Episode')
         axes[0].set_ylabel('Episode Reward')
         axes[0].set_title('Training Progress: Episode Rewards')
@@ -237,13 +256,27 @@ def analyze_training_results(callback: CrafterMetricsCallback, outdir: str):
         axes[0].grid(True, alpha=0.3)
         
         # Survival time
-        axes[1].plot(callback.episode_lengths, alpha=0.3, label='Raw')
-        if len(callback.episode_lengths) > 10:
-            window = min(50, len(callback.episode_lengths) // 10)
-            smoothed = np.convolve(callback.episode_lengths, 
-                                   np.ones(window)/window, mode='valid')
-            axes[1].plot(range(window-1, len(callback.episode_lengths)), 
-                        smoothed, label=f'Smoothed ({window} ep)', linewidth=2)
+        axes[1].plot(callback.episode_lengths, alpha=0.3, label='Raw', color='C1')
+        if len(callback.episode_lengths) > window:
+            # Calculate rolling mean and std
+            rolling_mean = []
+            rolling_std = []
+            for i in range(len(callback.episode_lengths)):
+                start = max(0, i - window + 1)
+                window_data = callback.episode_lengths[start:i+1]
+                rolling_mean.append(np.mean(window_data))
+                rolling_std.append(np.std(window_data))
+            
+            rolling_mean = np.array(rolling_mean)
+            rolling_std = np.array(rolling_std)
+            x = np.arange(len(rolling_mean))
+            
+            # Plot mean line
+            axes[1].plot(x, rolling_mean, label=f'Mean ({window} ep window)', linewidth=2, color='C1')
+            # Plot shaded ±1 std dev region
+            axes[1].fill_between(x, rolling_mean - rolling_std, rolling_mean + rolling_std,
+                                 alpha=0.3, color='C1', label='±1 Std Dev')
+        
         axes[1].set_xlabel('Episode')
         axes[1].set_ylabel('Survival Time (steps)')
         axes[1].set_title('Training Progress: Survival Time')
@@ -342,12 +375,13 @@ def load_crafter_stats(outdir: str):
             bar = '█' * int(rate * 50)
             print(f"{achievement:25s} | {bar:50s} {rate:.3f}")
 
-        # Geometric mean of unlock rates (with small epsilon to avoid log(0))
-        eps = 1e-12
-        geo_mean = math.exp(sum(math.log(rate + eps) for rate in unlock_rates.values()) / len(unlock_rates))
+        # Geometric mean with 1% offset (official Crafter scoring)
+        # Convert rates (0-1) to percentages (0-100) for scoring
+        percentages = [rate * 100 for rate in unlock_rates.values()]
+        geo_mean = math.exp(sum(math.log(1 + p) for p in percentages) / len(percentages)) - 1
 
         print(f"\n{'='*60}")
-        print(f"Geometric Mean Unlock Rate: {geo_mean:.4f}")
+        print(f"Geometric Mean Score (GMS): {geo_mean:.2f}%")
         print("="*60)
 
         return {
